@@ -13,9 +13,9 @@ import Usersettings from './Pages/UserSettings';
 import PrivateRoute from './Components/PrivateRoute';
 import Dashboard from './Components/Dashboard'; 
 import { organizerDashboardConfig, adminDashboardConfig } from './config/dashboardConfig';  // Add this import
-import Failure from "./Components/Failure";
 import BookingForm from './Components/Bookingform';
-import Success from "./Components/Success/";
+import BookingSuccess from './Components/BookingSuccess';
+import BookingFailure from './Components/BookingFailure';
 
 
 const App = () => {
@@ -38,11 +38,11 @@ const App = () => {
           <Route path="/profile" element={<Userprofile />} />
           <Route path="/settings" element={<Usersettings />} />
             
-           {/* Payment Routes */}
+           {/* booking routes */}
           
             <Route path ='/Booking-form'element={<BookingForm />} />
-            <Route path="/payment-success" element={<Success />} />
-            <Route path="/payment-failure" element={<Failure />} />
+            <Route path="/Booking-success" element={<BookingSuccess />} />
+            <Route path="/Booking-failure" element={<BookingFailure />} />
           
 
           {/* Protected Routes */}

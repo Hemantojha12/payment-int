@@ -3,50 +3,60 @@ import { Calendar, Users, TrendingUp, Heart, Star, MapPin, Share2, Clock, Search
 import { debounce } from 'lodash';
 import { useTheme } from '../../context/ThemeContext';
 import api from '../../utils/api';
-
 const BookingForm = ({ event, onClose }) => {
   const [seats, setSeats] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState('');
 
   const availableSeats = event.totalSlots - (event.attendees?.length || 0);
   const totalAmount = seats * event.price;
 
   const handlePayment = async () => {
+    if (!paymentMethod) {
+      setError('Please select a payment method');
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
-  
-      // Make API call to get payment URL and params
-      const response = await api.post('/bookings', {
+
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Please login first');
+      }
+
+      console.log("🔹 Making API call to /bookings with payload:", {
         eventId: event._id,
-        numberOfSeats: seats
+        numberOfSeats: seats,
+        paymentMethod
       });
-  
-      console.log('Payment Response:', response.data); // Log response to check its structure
-  
-      // Check if response contains necessary data
-      if (response.data.paymentUrl && response.data.params) {
-        const form = document.createElement('form');
-        form.setAttribute('method', 'POST');
-        form.setAttribute('action', response.data.paymentUrl);
-  
-        // Dynamically create hidden inputs for form submission
-        for (const key in response.data.params) {
-          const hiddenField = document.createElement('input');
-          hiddenField.setAttribute('type', 'hidden');
-          hiddenField.setAttribute('name', key);
-          hiddenField.setAttribute('value', response.data.params[key]);
-          form.appendChild(hiddenField);
+
+      const response = await api.post('/bookings', 
+        {
+          eventId: event._id,
+          numberOfSeats: seats,
+          paymentMethod
+        },
+        {
+          headers: { 'Authorization': `Bearer ${token}` }
         }
-  
-        document.body.appendChild(form);
-        form.submit();
+      );
+
+      console.log("🔹 Backend Response:", response.data); // Debugging log
+
+      if (response.data.paymentUrl) {
+        console.log("Redirecting to payment URL:", response.data.paymentUrl);
+        window.location.href = response.data.paymentUrl; // Directly redirect to the payment URL
       } else {
-        throw new Error('Invalid payment data received.');
+        console.error(" Payment URL not received from server:", response.data);
+        setError('Payment URL not received. Please try again.');
       }
     } catch (err) {
+      console.error(' Booking error:', err.response?.data || err.message);
       setError(err.response?.data?.message || 'Payment initiation failed');
+    } finally {
       setLoading(false);
     }
   };
@@ -81,7 +91,20 @@ const BookingForm = ({ event, onClose }) => {
           </p>
         </div>
 
-        
+        <div className="space-y-2">
+          <label className="block text-sm font-medium text-gray-700">
+            Payment Method
+          </label>
+          <select
+            value={paymentMethod}
+            onChange={(e) => setPaymentMethod(e.target.value)}
+            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+          >
+            <option value="">Select payment method</option>
+            <option value="esewa">Pay via eSewa</option>
+            <option value="khalti">Pay via Khalti</option>
+          </select>
+        </div>
 
         <div className="space-y-2">
           <label className="block text-sm font-medium text-gray-700">
@@ -95,16 +118,16 @@ const BookingForm = ({ event, onClose }) => {
         <div className="flex gap-4">
           <button
             onClick={handlePayment}
-            disabled={loading || seats < 1 || seats > availableSeats}
+            disabled={loading || seats < 1 || seats > availableSeats || !paymentMethod}
             className={`flex-1 px-4 py-2 text-white rounded-md ${
-              loading || seats < 1 || seats > availableSeats
+              loading || seats < 1 || seats > availableSeats || !paymentMethod
                 ? 'bg-purple-300 cursor-not-allowed'
                 : 'bg-purple-600 hover:bg-purple-700'
             }`}
           >
-            {loading ? 'Processing...' : 'Pay with eSewa'}
+            {loading ? 'Processing...' : 'Pay Now'}
           </button>
-          <button 
+          <button
             onClick={onClose}
             disabled={loading}
             className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
@@ -116,7 +139,6 @@ const BookingForm = ({ event, onClose }) => {
     </div>
   );
 };
-
 const UserDashboard = () => {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [activeEvent, setActiveEvent] = useState(null);
@@ -132,39 +154,39 @@ const UserDashboard = () => {
     location: '',
     priceRange: '',
     date: '',
-    status: ''
+    status: '',
   });
 
   const { isDarkMode } = useTheme();
 
   const themeClasses = {
-    layout: isDarkMode 
-      ? 'bg-gradient-to-br from-gray-900 to-gray-800' 
+    layout: isDarkMode
+      ? 'bg-gradient-to-br from-gray-900 to-gray-800'
       : 'bg-gradient-to-br from-blue-50 to-white',
     text: isDarkMode ? 'text-gray-100' : 'text-gray-800',
     textMuted: isDarkMode ? 'text-gray-300' : 'text-gray-600',
-    card: isDarkMode 
-      ? 'bg-gray-800/50 border-gray-700' 
+    card: isDarkMode
+      ? 'bg-gray-800/50 border-gray-700'
       : 'bg-white/50 border-gray-200',
-    button: isDarkMode 
-      ? 'bg-purple-600 hover:bg-purple-500' 
+    button: isDarkMode
+      ? 'bg-purple-600 hover:bg-purple-500'
       : 'bg-purple-500 hover:bg-purple-600',
-    input: isDarkMode 
-      ? 'bg-gray-800 border-gray-700 text-white' 
+    input: isDarkMode
+      ? 'bg-gray-800 border-gray-700 text-white'
       : 'bg-white border-gray-200 text-gray-900',
-    cardHover: isDarkMode 
-      ? 'hover:border-gray-600' 
+    cardHover: isDarkMode
+      ? 'hover:border-gray-600'
       : 'hover:border-purple-200',
-    filterBtn: isDarkMode 
-      ? 'hover:bg-gray-700' 
-      : 'hover:bg-gray-50'
+    filterBtn: isDarkMode
+      ? 'hover:bg-gray-700'
+      : 'hover:bg-gray-50',
   };
 
   const categories = [
     { id: 'all', name: 'All Events', icon: Calendar },
     { id: 'trending', name: 'Trending', icon: TrendingUp },
     { id: 'featured', name: 'Featured', icon: Star },
-    { id: 'regular', name: 'Regular', icon: Users }
+    { id: 'regular', name: 'Regular', icon: Users },
   ];
 
   const priceRanges = ['Free', '$0-$50', '$51-$100', '$101-$200', '$200+'];
@@ -177,17 +199,17 @@ const UserDashboard = () => {
         const response = await api.get('/events', {
           params: {
             category: category !== 'all' ? category : undefined,
-            ...filterParams
-          }
+            ...filterParams,
+          },
         });
         setEvents(response.data);
-        
+
         const userId = localStorage.getItem('userId');
         if (userId) {
           const userResponse = await api.get(`/users/${userId}/wishlist`);
-          setWishlist(new Set(userResponse.data.map(event => event._id)));
+          setWishlist(new Set(userResponse.data.map((event) => event._id)));
         }
-        
+
         setError(null);
       } catch (err) {
         setError(err.message);
@@ -196,6 +218,7 @@ const UserDashboard = () => {
       }
     }, 500),
     []
+
   );
 
   useEffect(() => {

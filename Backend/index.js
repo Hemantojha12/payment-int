@@ -18,6 +18,7 @@ import adminRoutes from './routes/admin.routes.js';
 import categoriesRoutes from './routes/categories.routes.js';
 import notificationRoutes from './routes/notification.routes.js';
 import bookingRoutes from './routes/Booking.routes.js';
+import axios from 'axios';
 import crypto from 'crypto';
 
 dotenv.config();
@@ -79,27 +80,14 @@ const connectDB = async () => {
 
 connectDB();
 
-// Handle /bookings route and eSewa payment integration
-const generateEsewaParams = (bookingDetails) => {
-  const { totalAmount, bookingId, userId } = bookingDetails;
-  const params = {
-    amt: totalAmount,
-    psc: 1,  // Payment service code (example, adjust as needed)
-    pdc: 1,  // Payment description code (example, adjust as needed)
-    txAmt: totalAmount,
-    tAmt: totalAmount,
-    pid: `BOOKING-${bookingId}`,
-    userName: `USER-${userId}`,
-    sid: process.env.MERCHANT_ID,  // Corrected to match .env
-    scd: process.env.SECRET,  // Corrected to match .env
-    ts: Date.now(),
-  };
-
-  // Generate the signature by hashing the parameters with your merchant key
-  const signature = crypto.createHash('sha256').update(Object.values(params).join('|')).digest('hex');
-  params.signature = signature;
-
-  return params;
+// Khalti API handler to initialize payment
+const initializeKhaltiPayment = async (params) => {
+  const response = await axios.post('https://khalti.com/api/v2/payment/initiate/', params, {
+    headers: {
+      Authorization: `Bearer ${process.env.KHALTI_SECRET_KEY}`
+    }
+  });
+  return response.data;
 };
 
 app.use('/api/v1/events', eventRoutes);
@@ -110,43 +98,101 @@ app.use('/api/v1/notifications', notificationRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/bookings', bookingRoutes);
 
-// eSewa API handler to generate payment URL
-app.post('/api/v1/payment/generate', (req, res) => {
+// Khalti payment initialization route
+app.post('/api/v1/payment/generate', async (req, res) => {
   const { eventId, numberOfSeats } = req.body;
 
-  // You will typically fetch the event details from the database using eventId
-  const eventDetails = {
-    totalAmount: 500,  // Example: you would calculate this from the numberOfSeats
-    bookingId: 12345,  // Example: generated booking ID
-    userId: 6789,  // Example: user ID of the person booking
-  };
-
-  const params = generateEsewaParams(eventDetails);
-  
-  // Get the payment URL from the .env file
-  const paymentUrl = process.env.ESEWA_PAYMENT_URL;
-
-  // Check if the payment URL is properly loaded
-  if (!paymentUrl) {
-    console.error("ERROR: ESEWA_PAYMENT_URL is not defined in the .env file.");
-    return res.status(500).json({
-      success: false,
-      message: 'Payment URL not defined in .env file.'
-    });
+  // Fetch event details from DB
+  const event = await Event.findById(eventId);
+  if (!event) {
+    return res.status(404).json({ message: 'Event not found' });
   }
 
+  const totalAmount = event.price * numberOfSeats;
+  const orderId = new mongoose.Types.ObjectId().toString();
+
+  // Create booking record
+  const booking = await Booking.create({
+    userId: req.user._id,
+    eventId: event._id,
+    numberOfSeats,
+    totalAmount,
+    paymentGateway: 'Khalti',
+    paymentStatus: 'pending',
+    paymentDetails: { orderId, params: { amount: totalAmount * 100, purchase_order_id: orderId } },
+  });
+
+  // Initialize Khalti payment
+  const paymentInitate = await initializeKhaltiPayment({
+    amount: totalAmount * 100,
+    purchase_order_id: orderId,
+    purchase_order_name: event.name,
+    return_url: `${process.env.BACKEND_URL}/complete-khalti-payment`,
+  });
+
   res.json({
-    paymentUrl,
-    params
+    success: true,
+    bookingId: booking._id,
+    paymentUrl: paymentInitate.payment_url,
+    params: paymentInitate.params,
   });
 });
 
-app.use((err, req, res, next) => {
-  console.error('Error:', err);
-  res.status(err.status || 500).json({
-    success: false,
-    message: err.message || 'Internal server error',
-  });
+// Handle Payment Success for Khalti
+app.post('/api/v1/payment/success', async (req, res) => {
+  const { token, amount, purchase_order_id } = req.body;
+
+  try {
+    // Find booking by order ID
+    const booking = await Booking.findOne({ _id: purchase_order_id });
+    if (!booking) {
+      return res.status(404).json({ message: 'Booking not found' });
+    }
+
+    // Verify Khalti payment
+    const response = await axios.post('https://khalti.com/api/v2/payment/verify/', {
+      token,
+      amount,
+      purchase_order_id,
+    }, {
+      headers: {
+        Authorization: `Bearer ${process.env.KHALTI_SECRET_KEY}`
+      }
+    });
+
+    if (response.data.status === 'success') {
+      // Payment successful
+      booking.paymentStatus = 'completed';
+      booking.transactionId = response.data.transaction_id;
+      await booking.save();
+
+      // Update event attendees
+      const event = await Event.findById(booking.eventId);
+      if (event && !event.attendees.includes(booking.userId)) {
+        event.attendees.push(booking.userId);
+        await event.save();
+      }
+
+      res.status(200).json({
+        message: 'Payment successful',
+        bookingId: booking._id,
+        transactionId: response.data.transaction_id,
+      });
+    } else {
+      // Payment failed
+      booking.paymentStatus = 'failed';
+      await booking.save();
+      res.status(400).json({ message: 'Payment verification failed' });
+    }
+  } catch (error) {
+    console.error('Payment Success Error:', error);
+    res.status(500).json({ message: 'An error occurred during payment processing' });
+  }
+});
+
+// Handle Payment Failure
+app.post('/api/v1/payment/failure', (req, res) => {
+  res.status(400).json({ message: 'Payment Failed' });
 });
 
 app.get('/', (req, res) => {

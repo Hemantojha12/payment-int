@@ -30,39 +30,30 @@ const bookingSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
-    // Payment details section
-    paymentDetails: {
-      orderId: {
-        type: String, // Unique identifier for payment transaction
-        required: true,
-      },
-      params: {
-        type: Object, // Store eSewa parameters (amt, pid, etc.)
-        required: true,
-      },
-      signature: {
-        type: String, // HMAC signature for validation
-        required: true,
-      },
-      paymentUrl: {
-        type: String,
-        default: process.env.ESEWA_PAYMENT_URL, // Default eSewa URL
-        required: false,  // No need for 'required' if there's a default value
-      },
-    },
-    // Optional: Store the QR code if needed (for other payment systems)
-    qrCode: {
-      type: String,
-      default: null,
-    },
-    // Optional: If you plan to support other payment systems in the future
     paymentGateway: {
       type: String,
-      enum: ['eSewa', 'Other'],
-      default: 'eSewa',
+      enum: ['Khalti'],
+      required: true,
+    },
+    paymentDetails: {
+      type: Object,
+      default: null, // To store payment-specific data
+    },
+    khaltiToken: {
+      type: String,
+      default: null, // Khalti-specific token (pidx)
+    },
+    khaltiTransactionId: {
+      type: String,
+      default: null, // Khalti-specific transaction id
+    },
+    khaltiPaymentStatus: {
+      type: String,
+      enum: ['Completed', 'Pending', 'Failed', 'User canceled'],
+      default: 'Pending', // Payment status from Khalti callback
     },
   },
-  { timestamps: true } // Ensure createdAt and updatedAt are added
+  { timestamps: true }
 );
 
 export default mongoose.model('Booking', bookingSchema);

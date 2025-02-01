@@ -4,17 +4,28 @@ import {
   initiateBooking,
   handlePaymentSuccess,
   handlePaymentFailure,
-} from '../controller/Booking.Controller.js';
+  getBookingDetails,  // Add this import
+} from '../controller/Booking.Controller.js'; // Ensure correct file path
 
 const bookingRouter = express.Router();
 
-// Initiate Booking Route
-bookingRouter.post('/', authenticateUser, initiateBooking);
+// Debugging middleware for POST requests
+bookingRouter.use((req, res, next) => {
+  if (req.method === 'POST') {
+    console.log('Booking request received:', {
+      method: req.method,
+      path: req.path,
+      body: req.body,
+      headers: req.headers['authorization'], // Only log essential headers
+    });
+  }
+  next();
+});
 
-// Handle Payment Success Callback
+// Routes
+bookingRouter.post('/', authenticateUser, initiateBooking); // Protected Route
 bookingRouter.get('/payment/success', handlePaymentSuccess);
-
-// Handle Payment Failure Callback
 bookingRouter.get('/payment/failure', handlePaymentFailure);
+bookingRouter.get('/booking-details/:pidx', getBookingDetails); // Fixed the route to match the correct path
 
 export default bookingRouter;
